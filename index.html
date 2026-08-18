@@ -28,6 +28,9 @@
     .list{display:grid;gap:10px}.item{padding:14px;display:flex;gap:12px;align-items:center}.cover{width:52px;height:72px;border-radius:10px;background:#232330;display:grid;place-items:center;overflow:hidden;flex:0 0 auto}.cover img{width:100%;height:100%;object-fit:cover}.meta{min-width:0}.meta strong{display:block;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.meta span{display:block;color:var(--muted);font-size:13px;margin-top:3px}.empty{color:var(--muted);text-align:center;padding:26px 12px;border:1px dashed var(--border);border-radius:16px}
     .modal{position:fixed;inset:0;background:rgba(0,0,0,.72);display:none;align-items:flex-end;justify-content:center;z-index:20}.modal.open{display:flex}.sheet{width:100%;max-width:680px;background:#0d0d13;border:1px solid var(--border);border-radius:24px 24px 0 0;padding:22px 18px calc(24px + env(safe-area-inset-bottom));max-height:88vh;overflow:auto}.sheet h2{margin:0 0 16px}.choice{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px}.choice button{padding:18px;border-radius:16px;border:1px solid var(--border);background:var(--panel);color:var(--text);cursor:pointer}.choice button.active{outline:2px solid var(--purple)}
     .field{margin-bottom:14px}.field label{display:block;font-size:13px;color:#d4d4dc;margin-bottom:6px}.field input{width:100%;border:1px solid var(--border);background:var(--panel2);color:var(--text);border-radius:12px;padding:12px;outline:none}.actions{display:flex;gap:10px;margin-top:18px}.actions button{flex:1;padding:13px;border-radius:12px;border:0;cursor:pointer;font-weight:800}.save{background:var(--purple);color:white}.cancel{background:#22222c;color:#ddd}
+    .settings-btn{margin-left:auto;background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:12px;padding:10px 12px;cursor:pointer}
+    .settings-actions{display:grid;gap:10px}.settings-actions button,.file-label{width:100%;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-weight:700;text-align:center;cursor:pointer}
+    .settings-actions .danger{color:#fca5a5;border-color:#4b2529}.hint{color:var(--muted);font-size:13px;line-height:1.45;margin:0 0 14px}
     .hidden{display:none!important}
     @media (max-width:420px){.brand h1{font-size:24px}.grid{grid-template-columns:1fr 1fr}.card{padding:18px 12px}.count{font-size:32px}.choice{grid-template-columns:1fr}}
   </style>
@@ -36,6 +39,7 @@
   <main class="app">
     <div class="top">
       <div class="brand"><div class="logo">📚</div><div><h1>My Library</h1><p>Your books. Your comics. All in one place.</p></div></div>
+      <button class="settings-btn" id="settingsBtn" aria-label="Settings">⚙️</button>
     </div>
 
     <div class="search"><span>🔎</span><input id="searchInput" placeholder="Search your collection..." /></div>
@@ -74,6 +78,20 @@
     </div>
   </div>
 
+  <div class="modal" id="settingsModal">
+    <div class="sheet">
+      <h2>Library Backup</h2>
+      <p class="hint">Export a backup before entering a large collection. The backup contains your books and comics and can be restored on this device later.</p>
+      <div class="settings-actions">
+        <button type="button" id="exportBtn">⬇️ Export Backup</button>
+        <label class="file-label" for="importFile">⬆️ Restore Backup</label>
+        <input class="hidden" id="importFile" type="file" accept=".json,application/json" />
+        <button type="button" class="danger" id="deleteAllBtn">Delete All Library Data</button>
+        <button type="button" id="closeSettingsBtn">Done</button>
+      </div>
+    </div>
+  </div>
+
 <script>
   const KEY='myLibraryItemsV1';
   let items = JSON.parse(localStorage.getItem(KEY) || '[]');
@@ -81,7 +99,7 @@
   let currentView='home';
 
   const el=id=>document.getElementById(id);
-  const homeView=el('homeView'), collectionView=el('collectionView'), modal=el('modal');
+  const homeView=el('homeView'), collectionView=el('collectionView'), modal=el('modal'), settingsModal=el('settingsModal');
 
   function save(){ localStorage.setItem(KEY, JSON.stringify(items)); render(); }
   function esc(s=''){ return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
@@ -127,6 +145,42 @@
     if(type==='book') item.author=el('author').value.trim();
     else {item.issue=el('issue').value.trim(); item.publisher=el('publisher').value.trim();}
     items.unshift(item); save(); e.target.reset(); modal.classList.remove('open'); setType('book');
+  });
+
+
+  el('settingsBtn').addEventListener('click',()=>settingsModal.classList.add('open'));
+  el('closeSettingsBtn').addEventListener('click',()=>settingsModal.classList.remove('open'));
+  settingsModal.addEventListener('click',e=>{if(e.target===settingsModal)settingsModal.classList.remove('open')});
+
+  el('exportBtn').addEventListener('click',()=>{
+    const backup={app:'My Library',version:1,exportedAt:new Date().toISOString(),items};
+    const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    const d=new Date().toISOString().slice(0,10);
+    a.href=url; a.download=`my-library-backup-${d}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  });
+
+  el('importFile').addEventListener('change',async e=>{
+    const file=e.target.files && e.target.files[0];
+    if(!file) return;
+    try{
+      const data=JSON.parse(await file.text());
+      const restored=Array.isArray(data)?data:data.items;
+      if(!Array.isArray(restored)) throw new Error('Invalid backup');
+      if(!confirm(`Restore ${restored.length} item(s)? This will replace the library currently stored in this app.`)) return;
+      items=restored; save(); settingsModal.classList.remove('open');
+      alert('Library restored.');
+    }catch(err){ alert('That file does not look like a valid My Library backup.'); }
+    e.target.value='';
+  });
+
+  el('deleteAllBtn').addEventListener('click',()=>{
+    if(confirm('Delete every book and comic from this app? This cannot be undone unless you exported a backup first.')){
+      items=[]; save(); settingsModal.classList.remove('open');
+    }
   });
 
   if('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
