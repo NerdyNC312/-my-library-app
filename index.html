@@ -31,6 +31,15 @@
     .settings-btn{margin-left:auto;background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:12px;padding:10px 12px;cursor:pointer}
     .settings-actions{display:grid;gap:10px}.settings-actions button,.file-label{width:100%;padding:14px;border-radius:12px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-weight:700;text-align:center;cursor:pointer}
     .settings-actions .danger{color:#fca5a5;border-color:#4b2529}.hint{color:var(--muted);font-size:13px;line-height:1.45;margin:0 0 14px}
+    .scan-row{margin:0 0 14px}
+    .scan-btn{width:100%;padding:13px;border-radius:12px;border:1px solid #4c3a73;background:#171320;color:#e9ddff;font-weight:800;cursor:pointer}
+    .scanner-box{display:grid;gap:12px}
+    .scanner-video{width:100%;aspect-ratio:4/3;object-fit:cover;background:#000;border:1px solid var(--border);border-radius:16px}
+    .scan-status{font-size:13px;line-height:1.45;color:var(--muted)}
+    .lookup-card{display:grid;grid-template-columns:68px 1fr;gap:12px;align-items:center;padding:12px;background:var(--panel);border:1px solid var(--border);border-radius:16px}
+    .lookup-card img{width:68px;height:96px;object-fit:cover;border-radius:9px;background:#232330}
+    .lookup-card h3{margin:0 0 5px;font-size:16px}.lookup-card p{margin:3px 0;color:var(--muted);font-size:13px}
+    .lookup-card button,.scanner-box>button{padding:12px;border-radius:12px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-weight:700;cursor:pointer}
     .hidden{display:none!important}
     @media (max-width:420px){.brand h1{font-size:24px}.grid{grid-template-columns:1fr 1fr}.card{padding:18px 12px}.count{font-size:32px}.choice{grid-template-columns:1fr}}
   </style>
@@ -72,9 +81,24 @@
         <div class="field" id="authorField"><label>Author *</label><input id="author" placeholder="Author" /></div>
         <div class="field hidden" id="issueField"><label>Issue Number</label><input id="issue" placeholder="e.g. 1" /></div>
         <div class="field hidden" id="publisherField"><label>Publisher</label><input id="publisher" placeholder="e.g. DC Comics" /></div>
+        <div class="scan-row" id="scanRow"><button class="scan-btn" type="button" id="scanIsbnBtn">📷 Scan Book Barcode / ISBN</button></div>
         <div class="field"><label>Cover Image URL (optional)</label><input id="cover" placeholder="https://..." /></div>
         <div class="actions"><button type="button" class="cancel" id="cancelBtn">Cancel</button><button class="save" type="submit">Save</button></div>
       </form>
+    </div>
+  </div>
+
+
+  <div class="modal" id="scannerModal">
+    <div class="sheet">
+      <h2>Scan Book Barcode</h2>
+      <div class="scanner-box">
+        <video id="scannerVideo" class="scanner-video" playsinline muted></video>
+        <div class="scan-status" id="scanStatus">Point the camera at the ISBN barcode on the back of the book.</div>
+        <div id="lookupResult"></div>
+        <button type="button" id="manualIsbnBtn">⌨️ Enter ISBN Manually</button>
+        <button type="button" id="closeScannerBtn">Cancel</button>
+      </div>
     </div>
   </div>
 
@@ -99,7 +123,7 @@
   let currentView='home';
 
   const el=id=>document.getElementById(id);
-  const homeView=el('homeView'), collectionView=el('collectionView'), modal=el('modal'), settingsModal=el('settingsModal');
+  const homeView=el('homeView'), collectionView=el('collectionView'), modal=el('modal'), settingsModal=el('settingsModal'), scannerModal=el('scannerModal');
 
   function save(){ localStorage.setItem(KEY, JSON.stringify(items)); render(); }
   function esc(s=''){ return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
@@ -128,7 +152,7 @@
   }
   function setType(t){
     type=t; el('bookChoice').classList.toggle('active',t==='book'); el('comicChoice').classList.toggle('active',t==='comic');
-    el('authorField').classList.toggle('hidden',t!=='book'); el('issueField').classList.toggle('hidden',t!=='comic'); el('publisherField').classList.toggle('hidden',t!=='comic');
+    el('authorField').classList.toggle('hidden',t!=='book'); el('issueField').classList.toggle('hidden',t!=='comic'); el('publisherField').classList.toggle('hidden',t!=='comic'); el('scanRow').classList.toggle('hidden',t!=='book');
     el('author').required=t==='book';
   }
   document.querySelectorAll('[data-view]').forEach(x=>x.addEventListener('click',()=>showView(x.dataset.view)));
@@ -147,6 +171,112 @@
     items.unshift(item); save(); e.target.reset(); modal.classList.remove('open'); setType('book');
   });
 
+
+
+  let scannerStream=null, scannerActive=false, zxingReader=null;
+
+  function stopScanner(){
+    scannerActive=false;
+    if(zxingReader && typeof zxingReader.reset==='function'){ try{zxingReader.reset();}catch{} }
+    zxingReader=null;
+    if(scannerStream){ scannerStream.getTracks().forEach(t=>t.stop()); scannerStream=null; }
+    const v=el('scannerVideo'); if(v) v.srcObject=null;
+  }
+
+  async function lookupIsbn(rawIsbn){
+    const isbn=String(rawIsbn||'').replace(/[^0-9Xx]/g,'');
+    const status=el('scanStatus'), result=el('lookupResult');
+    status.textContent=`Looking up ISBN ${isbn}...`; result.innerHTML='';
+    try{
+      const r=await fetch(`https://openlibrary.org/isbn/${encodeURIComponent(isbn)}.json`);
+      if(!r.ok) throw new Error('Not found');
+      const data=await r.json();
+
+      const names=[];
+      if(Array.isArray(data.authors)){
+        for(const a of data.authors.slice(0,3)){
+          try{
+            const ar=await fetch(`https://openlibrary.org${a.key}.json`);
+            if(ar.ok){ const aj=await ar.json(); if(aj.name) names.push(aj.name); }
+          }catch{}
+        }
+      }
+
+      const title=data.title||'';
+      const author=names.join(', ');
+      const coverId=Array.isArray(data.covers)&&data.covers.length?data.covers[0]:null;
+      const cover=coverId?`https://covers.openlibrary.org/b/id/${coverId}-M.jpg`:'';
+
+      status.textContent='Book found.';
+      result.innerHTML=`<div class="lookup-card">
+        ${cover?`<img src="${cover}" alt="">`:'<div></div>'}
+        <div><h3>${esc(title||'Untitled')}</h3><p>${esc(author||'Author unavailable')}</p><p>ISBN ${esc(isbn)}</p><button type="button" id="useBookBtn">Use This Book</button></div>
+      </div>`;
+
+      el('useBookBtn').addEventListener('click',()=>{
+        el('title').value=title;
+        el('author').value=author;
+        if(cover) el('cover').value=cover;
+        stopScanner();
+        scannerModal.classList.remove('open');
+      });
+    }catch{
+      status.textContent='No book match found for that ISBN. You can try another barcode or enter it manually.';
+    }
+  }
+
+  async function loadZXing(){
+    if(window.ZXingBrowser) return;
+    await new Promise((resolve,reject)=>{
+      const s=document.createElement('script');
+      s.src='https://unpkg.com/@zxing/browser@0.1.5/umd/zxing-browser.min.js';
+      s.onload=resolve; s.onerror=reject; document.head.appendChild(s);
+    });
+  }
+
+  async function startScanner(){
+    const status=el('scanStatus');
+    el('lookupResult').innerHTML='';
+    status.textContent='Starting camera...';
+    try{
+      await loadZXing();
+      scannerActive=true;
+      const Reader=window.ZXingBrowser.BrowserMultiFormatReader;
+      zxingReader=new Reader();
+      status.textContent='Point the camera at the ISBN barcode on the back of the book.';
+      await zxingReader.decodeFromConstraints(
+        {video:{facingMode:{ideal:'environment'}}},
+        el('scannerVideo'),
+        async (result,error,controls)=>{
+          if(!scannerActive || !result) return;
+          const raw=String(result.getText?result.getText():result.text||'').replace(/\D/g,'');
+          if(raw.length===13 && (raw.startsWith('978')||raw.startsWith('979'))){
+            scannerActive=false;
+            try{controls.stop();}catch{}
+            stopScanner();
+            await lookupIsbn(raw);
+          }
+        }
+      );
+    }catch{
+      status.textContent='Camera scanning could not start. Use “Enter ISBN Manually” below.';
+    }
+  }
+
+  el('scanIsbnBtn').addEventListener('click',()=>{
+    scannerModal.classList.add('open');
+    startScanner();
+  });
+  el('closeScannerBtn').addEventListener('click',()=>{ stopScanner(); scannerModal.classList.remove('open'); });
+  scannerModal.addEventListener('click',e=>{ if(e.target===scannerModal){ stopScanner(); scannerModal.classList.remove('open'); } });
+  el('manualIsbnBtn').addEventListener('click',async()=>{
+    const isbn=prompt('Enter the 10- or 13-digit ISBN:');
+    if(!isbn) return;
+    const clean=isbn.replace(/[^0-9Xx]/g,'');
+    if(clean.length!==10 && clean.length!==13){ alert('That does not look like a valid ISBN.'); return; }
+    stopScanner();
+    await lookupIsbn(clean);
+  });
 
   el('settingsBtn').addEventListener('click',()=>settingsModal.classList.add('open'));
   el('closeSettingsBtn').addEventListener('click',()=>settingsModal.classList.remove('open'));
