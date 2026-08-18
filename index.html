@@ -82,6 +82,7 @@
         <div class="field hidden" id="issueField"><label>Issue Number</label><input id="issue" placeholder="e.g. 1" /></div>
         <div class="field hidden" id="publisherField"><label>Publisher</label><input id="publisher" placeholder="e.g. DC Comics" /></div>
         <div class="scan-row" id="scanRow"><button class="scan-btn" type="button" id="scanIsbnBtn">📷 Scan Book Barcode / ISBN</button></div>
+        <div class="field"><label>Cover Photo (optional)</label><input id="coverPhoto" type="file" accept="image/*" capture="environment" /><small style="color:var(--muted)">Take a photo or choose one from Photos. It will be resized automatically.</small></div>
         <div class="field"><label>Cover Image URL (optional)</label><input id="cover" placeholder="https://..." /></div>
         <div class="actions"><button type="button" class="cancel" id="cancelBtn">Cancel</button><button class="save" type="submit">Save</button></div>
       </form>
@@ -98,6 +99,7 @@
         <div class="field" id="editAuthorField"><label>Author *</label><input id="editAuthor" /></div>
         <div class="field hidden" id="editIssueField"><label>Issue Number</label><input id="editIssue" /></div>
         <div class="field hidden" id="editPublisherField"><label>Publisher</label><input id="editPublisher" /></div>
+        <div class="field"><label>Replace Cover Photo (optional)</label><input id="editCoverPhoto" type="file" accept="image/*" capture="environment" /><small style="color:var(--muted)">Take a new photo or choose one from Photos. Leave blank to keep the current cover.</small></div>
         <div class="field"><label>Cover Image URL (optional)</label><input id="editCover" placeholder="https://..." /></div>
         <div class="field"><label>Reading Status</label><div class="status-grid"><button type="button" class="status-btn" data-status="unread">📕 Unread</button><button type="button" class="status-btn" data-status="reading">📖 Reading</button><button type="button" class="status-btn" data-status="read">✅ Read</button></div><button type="button" class="favorite-btn" id="favoriteBtn">☆ Favorite</button></div>
         <div class="actions"><button type="button" class="cancel" id="cancelEditBtn">Cancel</button><button class="save" type="submit">Save Changes</button></div>
@@ -138,11 +140,41 @@
   let items = JSON.parse(localStorage.getItem(KEY) || '[]');
   let type='book';
   let currentView='home';
+  let pendingAddCover='';
+  let pendingEditCover='';
 
   const el=id=>document.getElementById(id);
   const homeView=el('homeView'), collectionView=el('collectionView'), modal=el('modal'), editModal=el('editModal'), settingsModal=el('settingsModal'), scannerModal=el('scannerModal');
 
   function save(){ localStorage.setItem(KEY, JSON.stringify(items)); render(); }
+  function photoToCover(file){
+    return new Promise((resolve,reject)=>{
+      if(!file) return resolve('');
+      const reader=new FileReader();
+      reader.onerror=()=>reject(new Error('Could not read that photo.'));
+      reader.onload=()=>{
+        const img=new Image();
+        img.onerror=()=>reject(new Error('Could not open that photo.'));
+        img.onload=()=>{
+          const max=700, scale=Math.min(1,max/Math.max(img.width,img.height));
+          const w=Math.max(1,Math.round(img.width*scale)), h=Math.max(1,Math.round(img.height*scale));
+          const canvas=document.createElement('canvas'); canvas.width=w; canvas.height=h;
+          canvas.getContext('2d').drawImage(img,0,0,w,h);
+          resolve(canvas.toDataURL('image/jpeg',0.72));
+        };
+        img.src=reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+  async function loadCoverPhoto(input,mode){
+    try{
+      const data=await photoToCover(input.files?.[0]);
+      if(mode==='add') pendingAddCover=data; else pendingEditCover=data;
+    }catch(err){ alert(err.message); input.value=''; }
+  }
+  el('coverPhoto').addEventListener('change',()=>loadCoverPhoto(el('coverPhoto'),'add'));
+  el('editCoverPhoto').addEventListener('change',()=>loadCoverPhoto(el('editCoverPhoto'),'edit'));
   function esc(s=''){ return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
   function itemHtml(item){
     const sub=item.type==='book' ? esc(item.author || 'Unknown author') : [item.issue?`Issue #${esc(item.issue)}`:'',item.publisher?esc(item.publisher):''].filter(Boolean).join(' · ') || 'Comic';
@@ -176,7 +208,7 @@
   }
   document.querySelectorAll('[data-view]').forEach(x=>x.addEventListener('click',()=>showView(x.dataset.view)));
   el('backBtn').addEventListener('click',()=>showView('home'));
-  el('addBtn').addEventListener('click',()=>{setType('book'); modal.classList.add('open');});
+  el('addBtn').addEventListener('click',()=>{pendingAddCover=''; el('coverPhoto').value=''; setType('book'); modal.classList.add('open');});
   el('cancelBtn').addEventListener('click',()=>modal.classList.remove('open'));
   modal.addEventListener('click',e=>{if(e.target===modal)modal.classList.remove('open')});
   el('bookChoice').addEventListener('click',()=>setType('book'));
@@ -186,7 +218,8 @@
   function openEdit(id){
     const item=items.find(i=>String(i.id)===String(id));
     if(!item) return;
-    el('editId').value=item.id; el('editTitle').value=item.title||''; el('editCover').value=item.cover||'';
+    pendingEditCover=''; el('editCoverPhoto').value='';
+    el('editId').value=item.id; el('editTitle').value=item.title||''; el('editCover').value=(item.cover||'').startsWith('data:')?'':(item.cover||'');
     const isBook=item.type==='book';
     el('editAuthorField').classList.toggle('hidden',!isBook); el('editIssueField').classList.toggle('hidden',isBook); el('editPublisherField').classList.toggle('hidden',isBook);
     el('editAuthor').required=isBook; el('editAuthor').value=item.author||''; el('editIssue').value=item.issue||''; el('editPublisher').value=item.publisher||'';
@@ -201,7 +234,9 @@
   editModal.addEventListener('click',e=>{if(e.target===editModal)editModal.classList.remove('open')});
   el('editForm').addEventListener('submit',e=>{
     e.preventDefault(); const id=el('editId').value; const item=items.find(i=>String(i.id)===String(id)); if(!item) return;
-    item.title=el('editTitle').value.trim(); item.cover=el('editCover').value.trim();
+    item.title=el('editTitle').value.trim();
+    const editUrl=el('editCover').value.trim();
+    if(pendingEditCover) item.cover=pendingEditCover; else if(editUrl) item.cover=editUrl;
     item.status=document.querySelector('.status-btn.active')?.dataset.status||'unread'; item.favorite=el('favoriteBtn').classList.contains('active');
     if(item.type==='book') item.author=el('editAuthor').value.trim(); else {item.issue=el('editIssue').value.trim(); item.publisher=el('editPublisher').value.trim();}
     save(); editModal.classList.remove('open');
@@ -212,10 +247,10 @@
   });
   el('itemForm').addEventListener('submit',e=>{
     e.preventDefault();
-    const item={id:Date.now(),type,title:el('title').value.trim(),cover:el('cover').value.trim(),status:'unread',favorite:false};
+    const item={id:Date.now(),type,title:el('title').value.trim(),cover:pendingAddCover||el('cover').value.trim(),status:'unread',favorite:false};
     if(type==='book') item.author=el('author').value.trim();
     else {item.issue=el('issue').value.trim(); item.publisher=el('publisher').value.trim();}
-    items.unshift(item); save(); e.target.reset(); modal.classList.remove('open'); setType('book');
+    items.unshift(item); save(); e.target.reset(); pendingAddCover=''; modal.classList.remove('open'); setType('book');
   });
 
 
