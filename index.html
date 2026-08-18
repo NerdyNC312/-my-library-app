@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0a0f" />
+  <title>My Library</title>
+  <link rel="manifest" href="manifest.json" />
+  <style>
+    :root{
+      --bg:#08080c; --panel:#121219; --panel2:#181821; --text:#f4f4f7;
+      --muted:#a7a7b4; --border:#2a2a36; --purple:#8b5cf6; --red:#ef4444;
+      --shadow:0 18px 50px rgba(0,0,0,.35);
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:linear-gradient(180deg,#08080c,#0d0d13);color:var(--text);font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh}
+    button,input{font:inherit}
+    .app{max-width:680px;margin:0 auto;min-height:100vh;padding:24px 18px 90px}
+    .top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px}
+    .brand{display:flex;gap:12px;align-items:center}.logo{font-size:34px}.brand h1{margin:0;font-size:28px}.brand p{margin:4px 0 0;color:var(--muted);font-size:14px}
+    .search{display:flex;gap:10px;align-items:center;background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:12px 14px;margin-bottom:18px}
+    .search input{width:100%;background:transparent;border:0;outline:none;color:var(--text);font-size:16px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+    .card,.wide,.item{background:linear-gradient(180deg,var(--panel),#0f0f15);border:1px solid var(--border);border-radius:20px;box-shadow:var(--shadow)}
+    .card{padding:22px;text-align:center;cursor:pointer}.card .emoji{font-size:38px}.card h2{margin:10px 0 4px;font-size:20px}.count{font-size:36px;font-weight:800}.books .count{color:var(--purple)}.comics .count{color:var(--red)}
+    .wide{padding:18px;display:flex;gap:12px;align-items:center;cursor:pointer}.plus{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:var(--purple);font-size:28px;font-weight:300}.wide strong{font-size:18px}.wide span{display:block;color:var(--muted);font-size:14px;margin-top:3px}
+    .section-title{display:flex;align-items:center;justify-content:space-between;margin:26px 0 12px}.section-title h2{margin:0;font-size:20px}.back{background:none;border:0;color:#c4b5fd;padding:0;cursor:pointer;font-weight:700}
+    .list{display:grid;gap:10px}.item{padding:14px;display:flex;gap:12px;align-items:center}.cover{width:52px;height:72px;border-radius:10px;background:#232330;display:grid;place-items:center;overflow:hidden;flex:0 0 auto}.cover img{width:100%;height:100%;object-fit:cover}.meta{min-width:0}.meta strong{display:block;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.meta span{display:block;color:var(--muted);font-size:13px;margin-top:3px}.empty{color:var(--muted);text-align:center;padding:26px 12px;border:1px dashed var(--border);border-radius:16px}
+    .modal{position:fixed;inset:0;background:rgba(0,0,0,.72);display:none;align-items:flex-end;justify-content:center;z-index:20}.modal.open{display:flex}.sheet{width:100%;max-width:680px;background:#0d0d13;border:1px solid var(--border);border-radius:24px 24px 0 0;padding:22px 18px calc(24px + env(safe-area-inset-bottom));max-height:88vh;overflow:auto}.sheet h2{margin:0 0 16px}.choice{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px}.choice button{padding:18px;border-radius:16px;border:1px solid var(--border);background:var(--panel);color:var(--text);cursor:pointer}.choice button.active{outline:2px solid var(--purple)}
+    .field{margin-bottom:14px}.field label{display:block;font-size:13px;color:#d4d4dc;margin-bottom:6px}.field input{width:100%;border:1px solid var(--border);background:var(--panel2);color:var(--text);border-radius:12px;padding:12px;outline:none}.actions{display:flex;gap:10px;margin-top:18px}.actions button{flex:1;padding:13px;border-radius:12px;border:0;cursor:pointer;font-weight:800}.save{background:var(--purple);color:white}.cancel{background:#22222c;color:#ddd}
+    .hidden{display:none!important}
+    @media (max-width:420px){.brand h1{font-size:24px}.grid{grid-template-columns:1fr 1fr}.card{padding:18px 12px}.count{font-size:32px}.choice{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <main class="app">
+    <div class="top">
+      <div class="brand"><div class="logo">📚</div><div><h1>My Library</h1><p>Your books. Your comics. All in one place.</p></div></div>
+    </div>
+
+    <div class="search"><span>🔎</span><input id="searchInput" placeholder="Search your collection..." /></div>
+
+    <section id="homeView">
+      <div class="grid">
+        <div class="card books" data-view="books"><div class="emoji">📘</div><h2>Books</h2><div class="count" id="bookCount">0</div><small>items</small></div>
+        <div class="card comics" data-view="comics"><div class="emoji">💥</div><h2>Comics</h2><div class="count" id="comicCount">0</div><small>items</small></div>
+      </div>
+      <div class="wide" id="addBtn"><div class="plus">+</div><div><strong>Add Item</strong><span>Add a book or comic to your library</span></div></div>
+      <div class="section-title"><h2>All Items</h2></div>
+      <div class="list" id="homeList"></div>
+    </section>
+
+    <section id="collectionView" class="hidden">
+      <div class="section-title"><h2 id="collectionTitle">Books</h2><button class="back" id="backBtn">← Home</button></div>
+      <div class="list" id="collectionList"></div>
+    </section>
+  </main>
+
+  <div class="modal" id="modal">
+    <div class="sheet">
+      <h2>Add Item</h2>
+      <div class="choice">
+        <button type="button" id="bookChoice" class="active">📘 Book</button>
+        <button type="button" id="comicChoice">💥 Comic</button>
+      </div>
+      <form id="itemForm">
+        <div class="field"><label>Title *</label><input id="title" required placeholder="Title" /></div>
+        <div class="field" id="authorField"><label>Author *</label><input id="author" placeholder="Author" /></div>
+        <div class="field hidden" id="issueField"><label>Issue Number</label><input id="issue" placeholder="e.g. 1" /></div>
+        <div class="field hidden" id="publisherField"><label>Publisher</label><input id="publisher" placeholder="e.g. DC Comics" /></div>
+        <div class="field"><label>Cover Image URL (optional)</label><input id="cover" placeholder="https://..." /></div>
+        <div class="actions"><button type="button" class="cancel" id="cancelBtn">Cancel</button><button class="save" type="submit">Save</button></div>
+      </form>
+    </div>
+  </div>
+
+<script>
+  const KEY='myLibraryItemsV1';
+  let items = JSON.parse(localStorage.getItem(KEY) || '[]');
+  let type='book';
+  let currentView='home';
+
+  const el=id=>document.getElementById(id);
+  const homeView=el('homeView'), collectionView=el('collectionView'), modal=el('modal');
+
+  function save(){ localStorage.setItem(KEY, JSON.stringify(items)); render(); }
+  function esc(s=''){ return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
+  function itemHtml(item){
+    const sub=item.type==='book' ? esc(item.author || 'Unknown author') : [item.issue?`Issue #${esc(item.issue)}`:'',item.publisher?esc(item.publisher):''].filter(Boolean).join(' · ') || 'Comic';
+    const cover=item.cover ? `<img src="${esc(item.cover)}" alt="">` : (item.type==='book'?'📘':'💥');
+    return `<div class="item"><div class="cover">${cover}</div><div class="meta"><strong>${esc(item.title)}</strong><span>${sub}</span></div></div>`;
+  }
+  function renderList(target, list){ target.innerHTML=list.length?list.map(itemHtml).join(''):`<div class="empty">Nothing here yet.</div>`; }
+  function render(){
+    el('bookCount').textContent=items.filter(i=>i.type==='book').length;
+    el('comicCount').textContent=items.filter(i=>i.type==='comic').length;
+    const q=el('searchInput').value.trim().toLowerCase();
+    const filtered=items.filter(i=>JSON.stringify(i).toLowerCase().includes(q));
+    renderList(el('homeList'), filtered);
+    if(currentView!=='home'){
+      const t=currentView==='books'?'book':'comic';
+      renderList(el('collectionList'), filtered.filter(i=>i.type===t));
+    }
+  }
+  function showView(v){
+    currentView=v;
+    if(v==='home'){homeView.classList.remove('hidden');collectionView.classList.add('hidden');}
+    else {homeView.classList.add('hidden');collectionView.classList.remove('hidden');el('collectionTitle').textContent=v==='books'?'Books':'Comics';}
+    render();
+  }
+  function setType(t){
+    type=t; el('bookChoice').classList.toggle('active',t==='book'); el('comicChoice').classList.toggle('active',t==='comic');
+    el('authorField').classList.toggle('hidden',t!=='book'); el('issueField').classList.toggle('hidden',t!=='comic'); el('publisherField').classList.toggle('hidden',t!=='comic');
+    el('author').required=t==='book';
+  }
+  document.querySelectorAll('[data-view]').forEach(x=>x.addEventListener('click',()=>showView(x.dataset.view)));
+  el('backBtn').addEventListener('click',()=>showView('home'));
+  el('addBtn').addEventListener('click',()=>{setType('book'); modal.classList.add('open');});
+  el('cancelBtn').addEventListener('click',()=>modal.classList.remove('open'));
+  modal.addEventListener('click',e=>{if(e.target===modal)modal.classList.remove('open')});
+  el('bookChoice').addEventListener('click',()=>setType('book'));
+  el('comicChoice').addEventListener('click',()=>setType('comic'));
+  el('searchInput').addEventListener('input',render);
+  el('itemForm').addEventListener('submit',e=>{
+    e.preventDefault();
+    const item={id:Date.now(),type,title:el('title').value.trim(),cover:el('cover').value.trim()};
+    if(type==='book') item.author=el('author').value.trim();
+    else {item.issue=el('issue').value.trim(); item.publisher=el('publisher').value.trim();}
+    items.unshift(item); save(); e.target.reset(); modal.classList.remove('open'); setType('book');
+  });
+
+  if('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
+  render();
+</script>
+</body>
+</html>
