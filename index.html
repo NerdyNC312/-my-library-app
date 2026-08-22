@@ -353,6 +353,28 @@
     const id=el('editId').value; const item=items.find(i=>String(i.id)===String(id)); if(!item) return;
     if(confirm(`Delete “${item.title}” from your library?`)){ items=items.filter(i=>String(i.id)!==String(id)); save(); editModal.classList.remove('open'); }
   });
+  function normalizeText(v){ return String(v||'').trim().toLowerCase(); }
+
+  function duplicateComicMatch(candidate){
+    if(candidate.type!=='comic') return null;
+    const title=normalizeText(candidate.title);
+    const issue=normalizeText(candidate.issue);
+    const publisher=normalizeText(candidate.publisher);
+    return items.find(i=>
+      i.type==='comic' &&
+      normalizeText(i.title)===title &&
+      normalizeText(i.issue)===issue &&
+      normalizeText(i.publisher)===publisher
+    ) || null;
+  }
+
+  function confirmDuplicateIfNeeded(candidate){
+    const dup=duplicateComicMatch(candidate);
+    if(!dup) return true;
+    const issueText=candidate.issue ? ` #${candidate.issue}` : '';
+    return confirm(`⚠️ ${candidate.title}${issueText} already exists in your library.\n\nAdd another copy anyway?`);
+  }
+
   function buildNewItem(){
     const item={id:Date.now(),type,title:el('title').value.trim(),cover:pendingAddCover||el('cover').value.trim(),status:'unread',favorite:false};
     if(type==='book') item.author=el('author').value.trim();
@@ -362,6 +384,7 @@
   el('itemForm').addEventListener('submit',e=>{
     e.preventDefault();
     const item=buildNewItem();
+    if(!confirmDuplicateIfNeeded(item)) return;
     items.unshift(item); save(); e.target.reset(); pendingAddCover=''; modal.classList.remove('open'); setType('book');
   });
   el('saveNextBtn').addEventListener('click',()=>{
@@ -370,6 +393,7 @@
     if(!title){ alert('Add a comic title first.'); el('title').focus(); return; }
     const publisher=el('publisher').value.trim();
     const item=buildNewItem();
+    if(!confirmDuplicateIfNeeded(item)) return;
     items.unshift(item); save();
 
     // Keep the title and publisher for a run of consecutive issues.
