@@ -125,6 +125,7 @@
         <div class="field"><label>Replace Cover Photo (optional)</label><input id="editCoverPhoto" type="file" accept="image/*" capture="environment" /><small style="color:var(--muted)">Take a new photo or choose one from Photos. Leave blank to keep the current cover.</small></div>
         <div class="field"><label>Cover Image URL (optional)</label><input id="editCover" placeholder="https://..." /></div>
         <div class="field"><label>Reading Status</label><div class="status-grid"><button type="button" class="status-btn" data-status="unread">📕 Unread</button><button type="button" class="status-btn" data-status="reading">📖 Reading</button><button type="button" class="status-btn" data-status="read">✅ Read</button></div><button type="button" class="favorite-btn" id="favoriteBtn">☆ Favorite</button></div>
+        <div class="field"><label>First Read Date (optional)</label><input id="editFirstReadDate" type="date" /><small style="color:var(--muted)">Automatically set the first time you mark this item Read. You can edit or clear it here.</small></div>
         <div class="actions"><button type="button" class="cancel" id="cancelEditBtn">Cancel</button><button class="save" type="submit">Save Changes</button></div>
         <button type="button" class="danger-btn" id="deleteItemBtn">🗑️ Delete This Item</button>
       </form>
@@ -271,7 +272,10 @@
   function itemHtml(item){
     const sub=item.type==='book' ? esc(item.author || 'Unknown author') : [item.issue?`Issue #${esc(item.issue)}`:'',item.publisher?esc(item.publisher):''].filter(Boolean).join(' · ') || 'Comic';
     const cover=item.cover ? `<img src="${esc(item.cover)}" alt="">` : (item.type==='book'?'📘':'💥');
-    const status=item.status||'unread'; const statusLabel=status==='read'?'✅ Read':status==='reading'?'📖 Reading':'📕 Unread';
+    const status=item.status||'unread';
+    const firstRead=item.firstReadDate||'';
+    const displayReadDate=firstRead ? (()=>{ const [y,m,d]=firstRead.split('-'); return `${Number(m)}/${Number(d)}/${String(y).slice(-2)}`; })() : '';
+    const statusLabel=status==='read' ? `✅ Read${displayReadDate ? ` · ${displayReadDate}` : ''}` : status==='reading'?'📖 Reading':'📕 Unread';
     const badges=`<div class="badges"><span class="badge">${statusLabel}</span>${item.favorite?'<span class="badge fav">★ Favorite</span>':''}</div>`;
     return `<div class="item" data-id="${esc(item.id)}"><div class="cover">${cover}</div><div class="meta"><strong>${esc(item.title)}</strong><span>${sub}</span>${badges}</div></div>`;
   }
@@ -332,11 +336,21 @@
     el('editAuthorField').classList.toggle('hidden',!isBook); el('editIssueField').classList.toggle('hidden',isBook); el('editPublisherField').classList.toggle('hidden',isBook);
     el('editAuthor').required=isBook; el('editAuthor').value=item.author||''; el('editIssue').value=item.issue||''; el('editPublisher').value=item.publisher||'';
     const status=item.status||'unread'; document.querySelectorAll('.status-btn').forEach(b=>b.classList.toggle('active',b.dataset.status===status));
+    el('editFirstReadDate').value=item.firstReadDate||'';
     el('favoriteBtn').classList.toggle('active',!!item.favorite); el('favoriteBtn').textContent=item.favorite?'★ Favorite':'☆ Favorite';
     editModal.classList.add('open');
   }
   [el('homeList'),el('collectionList')].forEach(list=>list.addEventListener('click',e=>{ const row=e.target.closest('.item'); if(row) openEdit(row.dataset.id); }));
-  document.querySelectorAll('.status-btn').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.status-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');}));
+  function todayLocalISO(){
+    const d=new Date();
+    const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), day=String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${day}`;
+  }
+  document.querySelectorAll('.status-btn').forEach(b=>b.addEventListener('click',()=>{
+    document.querySelectorAll('.status-btn').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    if(b.dataset.status==='read' && !el('editFirstReadDate').value) el('editFirstReadDate').value=todayLocalISO();
+  }));
   el('favoriteBtn').addEventListener('click',()=>{const b=el('favoriteBtn');b.classList.toggle('active');b.textContent=b.classList.contains('active')?'★ Favorite':'☆ Favorite';});
   el('cancelEditBtn').addEventListener('click',()=>editModal.classList.remove('open'));
   editModal.addEventListener('click',e=>{if(e.target===editModal)editModal.classList.remove('open')});
@@ -345,7 +359,11 @@
     item.title=el('editTitle').value.trim();
     const editUrl=el('editCover').value.trim();
     if(pendingEditCover) item.cover=pendingEditCover; else if(editUrl) item.cover=editUrl;
-    item.status=document.querySelector('.status-btn.active')?.dataset.status||'unread'; item.favorite=el('favoriteBtn').classList.contains('active');
+    const previousStatus=item.status||'unread';
+    item.status=document.querySelector('.status-btn.active')?.dataset.status||'unread';
+    item.favorite=el('favoriteBtn').classList.contains('active');
+    item.firstReadDate=el('editFirstReadDate').value||'';
+    if(item.status==='read' && !item.firstReadDate && previousStatus!=='read') item.firstReadDate=todayLocalISO();
     if(item.type==='book') item.author=el('editAuthor').value.trim(); else {item.issue=el('editIssue').value.trim(); item.publisher=el('editPublisher').value.trim();}
     save(); editModal.classList.remove('open');
   });
